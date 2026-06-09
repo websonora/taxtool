@@ -1,0 +1,15 @@
+[project]
+name = "tax-document-backup-portal"
+version = "0.1.0"
+description = "Local MVP for visual tax PDF backup creation"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "PyMuPDF",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

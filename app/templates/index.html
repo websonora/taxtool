@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tax Document Backup Portal</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">Websonora MVP</p>
+      <h1>Tax Document Backup Portal</h1>
+      <p class="subtitle">Open a prior-year PDF, click pages to keep, add current-year PDFs, and create the new backup file.</p>
+    </header>
+
+    <section class="card">
+      <h2>1. Select prior-year PDF</h2>
+      <input id="priorPdf" type="file" accept="application/pdf">
+      <button id="uploadPrior">Open PDF</button>
+      <p id="priorStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>2. Click pages to keep</h2>
+      <p class="hint">Selected pages turn blue. These will be carried forward from the old PDF.</p>
+      <div id="thumbnailGrid" class="thumbnail-grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>3. Add current-year documents</h2>
+      <label>Tax year
+        <input id="taxYear" type="text" value="2025" maxlength="4">
+      </label>
+      <label>Output filename
+        <input id="clientFilename" type="text" placeholder="Juan Garcia.pdf">
+      </label>
+      <label>New PDFs: W-2, 1099, etc.
+        <input id="newPdfs" type="file" accept="application/pdf" multiple>
+      </label>
+      <button id="createBackup">Create Backup PDF</button>
+      <p id="createStatus" class="status"></p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
