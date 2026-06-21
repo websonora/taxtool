@@ -16,8 +16,29 @@
 
     <section class="card">
       <h2>1. Select prior-year PDF</h2>
-      <input id="priorPdf" type="file" accept="application/pdf">
-      <button id="uploadPrior">Open PDF</button>
+
+      <div class="mode-grid">
+        <div class="mode-panel">
+          <h3>Shared folder mode</h3>
+          <p class="hint">Use this when the Linux server has the office document share mounted.</p>
+          <label>Prior year
+            <input id="sharedYear" type="text" value="2024" maxlength="4">
+          </label>
+          <label>Search client filename
+            <input id="sharedQuery" type="text" placeholder="Juan Garcia">
+          </label>
+          <button id="searchShared">Search Shared Folder</button>
+          <div id="sharedResults" class="results"></div>
+        </div>
+
+        <div class="mode-panel">
+          <h3>Upload demo mode</h3>
+          <p class="hint">Use this when the server does not have shared-folder access yet.</p>
+          <input id="priorPdf" type="file" accept="application/pdf">
+          <button id="uploadPrior">Open Uploaded PDF</button>
+        </div>
+      </div>
+
       <p id="priorStatus" class="status"></p>
     </section>
 

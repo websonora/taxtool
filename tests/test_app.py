@@ -8,6 +8,7 @@ from app.pdf_service import get_page_count
 
 
 def make_pdf(path: Path, labels: list[str]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     doc = fitz.open()
     for label in labels:
         page = doc.new_page(width=200, height=200)
@@ -17,12 +18,16 @@ def make_pdf(path: Path, labels: list[str]) -> Path:
     return path
 
 
-def configure_tmp_data(monkeypatch, tmp_path):
+def configure_tmp_data(monkeypatch, tmp_path, with_document_root: bool = False):
     data_dir = tmp_path / "data"
     monkeypatch.setattr(main, "DATA_DIR", data_dir)
     monkeypatch.setattr(main, "UPLOAD_DIR", data_dir / "uploads")
     monkeypatch.setattr(main, "OUTPUT_DIR", data_dir / "output")
     monkeypatch.setattr(main, "TEMP_DIR", data_dir / "temp")
+    if with_document_root:
+        monkeypatch.setattr(main, "DOCUMENT_ROOT", tmp_path / "tax-documents")
+    else:
+        monkeypatch.setattr(main, "DOCUMENT_ROOT", None)
     main.UPLOADED_PRIOR_PDFS.clear()
 
 
@@ -95,3 +100,71 @@ def test_create_backup_merges_selected_old_pages_with_new_pdfs(monkeypatch, tmp_
     assert output_path.name == "Juan Garcia.pdf"
     assert get_page_count(output_path) == 2
     assert (main.OUTPUT_DIR / "audit.jsonl").exists()
+
+
+def test_search_prior_pdfs_lists_matching_files_from_document_root(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id"])
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Maria Lopez.pdf", ["old id"])
+    client = TestClient(main.app)
+
+    response = client.get("/api/shared/prior-pdfs", params={"year": "2024", "query": "juan"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["document_root"] == str(main.DOCUMENT_ROOT)
+    assert payload["results"] == [
+        {"filename": "Juan Garcia.pdf", "relative_path": "2024/Juan Garcia.pdf", "year": "2024"}
+    ]
+
+
+def test_open_prior_pdf_from_document_root_registers_document(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id", "old w2"])
+    client = TestClient(main.app)
+
+    response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/Juan Garcia.pdf"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filename"] == "Juan Garcia.pdf"
+    assert payload["page_count"] == 2
+    assert main.UPLOADED_PRIOR_PDFS[payload["document_id"]] == main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf"
+
+
+def test_open_prior_pdf_from_document_root_rejects_traversal(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    client = TestClient(main.app)
+
+    response = client.post("/api/shared/prior-pdf", data={"relative_path": "../secret.pdf"})
+
+    assert response.status_code == 400
+
+
+def test_create_backup_with_document_root_saves_into_tax_year_folder(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id", "old w2"])
+    new_doc = make_pdf(tmp_path / "new.pdf", ["new 2025 w2"])
+    client = TestClient(main.app)
+
+    open_response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/Juan Garcia.pdf"})
+    document_id = open_response.json()["document_id"]
+
+    with new_doc.open("rb") as handle:
+        response = client.post(
+            "/api/create-backup",
+            data={
+                "document_id": document_id,
+                "selected_pages": "1",
+                "tax_year": "2025",
+                "client_filename": "Juan Garcia.pdf",
+            },
+            files=[("current_year_files", ("new.pdf", handle, "application/pdf"))],
+        )
+
+    assert response.status_code == 200
+    output_path = Path(response.json()["output_path"])
+    assert output_path == main.DOCUMENT_ROOT / "2025" / "Juan Garcia.pdf"
+    assert output_path.exists()
+    assert get_page_count(output_path) == 2
+    assert (main.DOCUMENT_ROOT / "audit.jsonl").exists()

@@ -11,6 +11,10 @@ const createStatus = document.getElementById('createStatus');
 const taxYear = document.getElementById('taxYear');
 const clientFilename = document.getElementById('clientFilename');
 const newPdfs = document.getElementById('newPdfs');
+const sharedYear = document.getElementById('sharedYear');
+const sharedQuery = document.getElementById('sharedQuery');
+const searchShared = document.getElementById('searchShared');
+const sharedResults = document.getElementById('sharedResults');
 
 function setStatus(element, text, isError = false) {
   element.textContent = text;
@@ -50,6 +54,61 @@ function renderThumbnails(pageCount) {
   }
 }
 
+function activateDocument(payload, sourceLabel) {
+  currentDocumentId = payload.document_id;
+  currentFilename = payload.filename;
+  if (!clientFilename.value) {
+    clientFilename.value = currentFilename;
+  }
+  setStatus(priorStatus, `${sourceLabel}: ${payload.filename} with ${payload.page_count} pages.`);
+  renderThumbnails(payload.page_count);
+}
+
+async function openSharedPdf(relativePath) {
+  const form = new FormData();
+  form.append('relative_path', relativePath);
+  setStatus(priorStatus, 'Opening shared PDF...');
+
+  const response = await fetch('/api/shared/prior-pdf', { method: 'POST', body: form });
+  if (!response.ok) {
+    setStatus(priorStatus, await response.text(), true);
+    return;
+  }
+
+  activateDocument(await response.json(), 'Opened from shared folder');
+}
+
+searchShared.addEventListener('click', async () => {
+  sharedResults.innerHTML = '';
+  const params = new URLSearchParams({
+    year: sharedYear.value.trim(),
+    query: sharedQuery.value.trim(),
+  });
+  setStatus(priorStatus, 'Searching shared folder...');
+
+  const response = await fetch(`/api/shared/prior-pdfs?${params}`);
+  if (!response.ok) {
+    setStatus(priorStatus, 'Shared folder is not configured yet. Use upload demo mode for now.', true);
+    return;
+  }
+
+  const payload = await response.json();
+  if (!payload.results.length) {
+    setStatus(priorStatus, `No PDFs found in ${sharedYear.value}.`, true);
+    return;
+  }
+
+  setStatus(priorStatus, `Found ${payload.results.length} PDF(s) in ${payload.document_root}.`);
+  for (const result of payload.results) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'result-row';
+    button.textContent = result.relative_path;
+    button.addEventListener('click', () => openSharedPdf(result.relative_path));
+    sharedResults.appendChild(button);
+  }
+});
+
 uploadPrior.addEventListener('click', async () => {
   if (!priorPdf.files.length) {
     setStatus(priorStatus, 'Select a prior-year PDF first.', true);
@@ -66,14 +125,7 @@ uploadPrior.addEventListener('click', async () => {
     return;
   }
 
-  const payload = await response.json();
-  currentDocumentId = payload.document_id;
-  currentFilename = payload.filename;
-  if (!clientFilename.value) {
-    clientFilename.value = currentFilename;
-  }
-  setStatus(priorStatus, `Opened ${payload.filename} with ${payload.page_count} pages.`);
-  renderThumbnails(payload.page_count);
+  activateDocument(await response.json(), 'Opened uploaded PDF');
 });
 
 createBackup.addEventListener('click', async () => {

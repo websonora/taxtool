@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -22,6 +22,7 @@ DATA_DIR = Path(os.getenv("TAX_PORTAL_DATA_DIR", PROJECT_ROOT / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 OUTPUT_DIR = DATA_DIR / "output"
 TEMP_DIR = DATA_DIR / "temp"
+DOCUMENT_ROOT = Path(os.getenv("TAX_PORTAL_DOCUMENT_ROOT")) if os.getenv("TAX_PORTAL_DOCUMENT_ROOT") else None
 
 UPLOADED_PRIOR_PDFS: dict[str, Path] = {}
 
@@ -50,6 +51,30 @@ def _parse_selected_pages(selected_pages: str) -> list[int]:
     return pages
 
 
+def _require_document_root() -> Path:
+    if DOCUMENT_ROOT is None:
+        raise HTTPException(status_code=400, detail="Shared document root is not configured")
+    return DOCUMENT_ROOT
+
+
+def _safe_shared_pdf_path(relative_path: str) -> Path:
+    root = _require_document_root().resolve()
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid shared PDF path") from exc
+    if candidate.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Shared PDF not found")
+    return candidate
+
+
+def _output_base_dir() -> Path:
+    return DOCUMENT_ROOT if DOCUMENT_ROOT is not None else OUTPUT_DIR
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     index_path = PROJECT_ROOT / "app" / "templates" / "index.html"
@@ -73,6 +98,46 @@ def upload_prior_pdf(file: Annotated[UploadFile, File(...)]) -> dict:
         "document_id": document_id,
         "filename": clean_filename,
         "page_count": get_page_count(destination),
+    }
+
+
+@app.get("/api/shared/prior-pdfs")
+def search_shared_prior_pdfs(
+    year: Annotated[str, Query(min_length=4, max_length=4)],
+    query: str = "",
+) -> dict:
+    root = _require_document_root()
+    year_dir = root / year
+    if not year_dir.exists():
+        return {"document_root": str(root), "results": []}
+
+    needle = query.casefold().strip()
+    results = []
+    for path in sorted(year_dir.rglob("*.pdf")):
+        if needle and needle not in path.name.casefold():
+            continue
+        results.append(
+            {
+                "filename": path.name,
+                "relative_path": path.relative_to(root).as_posix(),
+                "year": year,
+            }
+        )
+        if len(results) >= 50:
+            break
+    return {"document_root": str(root), "results": results}
+
+
+@app.post("/api/shared/prior-pdf")
+def open_shared_prior_pdf(relative_path: Annotated[str, Form(...)]) -> dict:
+    source = _safe_shared_pdf_path(relative_path)
+    document_id = uuid.uuid4().hex
+    UPLOADED_PRIOR_PDFS[document_id] = source
+    return {
+        "document_id": document_id,
+        "filename": source.name,
+        "page_count": get_page_count(source),
+        "relative_path": source.relative_to(_require_document_root()).as_posix(),
     }
 
 
@@ -119,7 +184,8 @@ def create_backup(
             merge_inputs.append(destination)
             saved_current_year_files.append(clean_name)
 
-    output_path = resolve_output_path(OUTPUT_DIR, tax_year, client_filename)
+    output_base = _output_base_dir()
+    output_path = resolve_output_path(output_base, tax_year, client_filename)
     merge_pdfs(merge_inputs, output_path)
 
     record = {
@@ -131,7 +197,7 @@ def create_backup(
         "current_year_files": saved_current_year_files,
         "output_path": str(output_path),
     }
-    append_audit_log(OUTPUT_DIR, record)
+    append_audit_log(output_base, record)
 
     return {
         "ok": True,

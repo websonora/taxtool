@@ -57,6 +57,39 @@ label {
   font-weight: 700;
 }
 
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.mode-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.mode-panel h3 {
+  margin-top: 0;
+}
+
+.results {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.result-row {
+  text-align: left;
+  background: #e0f2fe;
+  color: #0f172a;
+}
+
+.result-row:hover {
+  background: #bae6fd;
+}
+
 input,
 button {
   font: inherit;
