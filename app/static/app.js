@@ -2,6 +2,7 @@ let currentDocumentId = null;
 let currentFilename = null;
 let currentPageCount = 0;
 const pagesToDelete = new Set();
+const selectedCurrentPdfs = new Set();
 
 const priorPdf = document.getElementById('priorPdf');
 const uploadPrior = document.getElementById('uploadPrior');
@@ -14,6 +15,10 @@ const seasonSummary = document.getElementById('seasonSummary');
 const taxYear = document.getElementById('taxYear');
 const clientFilename = document.getElementById('clientFilename');
 const newPdfs = document.getElementById('newPdfs');
+const currentQuery = document.getElementById('currentQuery');
+const searchCurrent = document.getElementById('searchCurrent');
+const currentResults = document.getElementById('currentResults');
+const confirmAndContinue = document.getElementById('confirmAndContinue');
 const sharedYear = document.getElementById('sharedYear');
 const sharedQuery = document.getElementById('sharedQuery');
 const searchShared = document.getElementById('searchShared');
@@ -36,14 +41,18 @@ function backupYearForSeason(season) {
   return String(Number.parseInt(season, 10) - 1);
 }
 
-function syncSeasonFields({ clearResults = false } = {}) {
+function syncSeasonFields({ clearResults = false, resetBackupFolder = false } = {}) {
   const season = currentSeason();
-  const backupYear = backupYearForSeason(season);
-  sharedYear.value = backupYear;
+  const defaultBackupYear = backupYearForSeason(season);
+  if (resetBackupFolder) {
+    sharedYear.value = defaultBackupYear;
+  }
   taxYear.value = season;
-  seasonSummary.textContent = `${season} season: search ${backupYear} backup folder, then save final PDF into ${season} folder.`;
+  seasonSummary.textContent = `${season} season: default source is ${defaultBackupYear}, current source is ${sharedYear.value}, and final PDF saves into ${season} folder.`;
   if (clearResults) {
     sharedResults.innerHTML = '';
+    currentResults.innerHTML = '';
+    selectedCurrentPdfs.clear();
   }
 }
 
@@ -53,6 +62,26 @@ function clearActiveDocument() {
   currentPageCount = 0;
   pagesToDelete.clear();
   thumbnailGrid.innerHTML = '';
+}
+
+function clearCurrentSelections() {
+  selectedCurrentPdfs.clear();
+  currentResults.innerHTML = '';
+  if (newPdfs) {
+    newPdfs.value = '';
+  }
+}
+
+function resetForNextDocument() {
+  clearActiveDocument();
+  clearCurrentSelections();
+  sharedQuery.value = '';
+  currentQuery.value = '';
+  clientFilename.value = '';
+  priorPdf.value = '';
+  setStatus(priorStatus, 'Ready for the next client document.');
+  setStatus(createStatus, '');
+  confirmAndContinue.disabled = true;
 }
 
 function pageImageUrl(page) {
@@ -166,7 +195,7 @@ async function openSharedPdf(relativePath) {
 
 searchShared.addEventListener('click', async () => {
   sharedResults.innerHTML = '';
-  syncSeasonFields({ clearResults: true });
+  syncSeasonFields({ clearResults: false });
   const params = new URLSearchParams({
     year: sharedYear.value.trim(),
     query: sharedQuery.value.trim(),
@@ -193,6 +222,50 @@ searchShared.addEventListener('click', async () => {
     button.textContent = result.relative_path;
     button.addEventListener('click', () => openSharedPdf(result.relative_path));
     sharedResults.appendChild(button);
+  }
+});
+
+searchCurrent.addEventListener('click', async () => {
+  currentResults.innerHTML = '';
+  selectedCurrentPdfs.clear();
+  syncSeasonFields({ clearResults: false });
+  const params = new URLSearchParams({
+    year: taxYear.value.trim(),
+    query: currentQuery.value.trim(),
+  });
+  setStatus(createStatus, 'Searching Cliente Actual...');
+
+  const response = await fetch(`/api/shared/current-pdfs?${params}`);
+  if (!response.ok) {
+    setStatus(createStatus, 'Cliente Actual folder is not configured or not reachable. Use manual upload fallback for now.', true);
+    return;
+  }
+
+  const payload = await response.json();
+  if (!payload.results.length) {
+    setStatus(createStatus, `No PDFs found in ${payload.cliente_actual_folder}.`, true);
+    return;
+  }
+
+  setStatus(createStatus, `Found ${payload.results.length} PDF(s) in ${payload.cliente_actual_folder}. Select the scanned documents to merge.`);
+  for (const result of payload.results) {
+    const label = document.createElement('label');
+    label.className = 'result-row checkbox-row';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = result.relative_path;
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        selectedCurrentPdfs.add(result.relative_path);
+      } else {
+        selectedCurrentPdfs.delete(result.relative_path);
+      }
+    });
+    const name = document.createElement('span');
+    name.textContent = result.relative_path;
+    label.appendChild(checkbox);
+    label.appendChild(name);
+    currentResults.appendChild(label);
   }
 });
 
@@ -233,6 +306,9 @@ createBackup.addEventListener('click', async () => {
   syncSeasonFields();
   form.append('tax_year', taxYear.value.trim());
   form.append('client_filename', clientFilename.value.trim() || currentFilename || 'client.pdf');
+  for (const relativePath of selectedCurrentPdfs) {
+    form.append('current_shared_paths', relativePath);
+  }
   for (const file of newPdfs.files) {
     form.append('current_year_files', file);
   }
@@ -255,16 +331,30 @@ createBackup.addEventListener('click', async () => {
   link.target = '_blank';
   createStatus.appendChild(message);
   createStatus.appendChild(link);
+  confirmAndContinue.disabled = false;
+});
+
+confirmAndContinue.addEventListener('click', () => {
+  resetForNextDocument();
+});
+
+sharedYear.addEventListener('change', () => {
+  syncSeasonFields();
+  clearActiveDocument();
+  setStatus(priorStatus, `Backup folder changed to ${sharedYear.value}. Search/open the prior PDF again before creating the final PDF.`);
+  setStatus(createStatus, '');
+  confirmAndContinue.disabled = true;
 });
 
 incomeTaxSeason.addEventListener('change', () => {
-  syncSeasonFields({ clearResults: true });
+  syncSeasonFields({ clearResults: true, resetBackupFolder: true });
   clearActiveDocument();
-  setStatus(priorStatus, `Season changed to ${currentSeason()}. Search will use ${sharedYear.value}; final PDF will save under ${taxYear.value}. Open last year's backup again before creating the final PDF.`);
+  setStatus(priorStatus, `Season changed to ${currentSeason()}. Search will default to ${sharedYear.value}; final PDF will save under ${taxYear.value}. Open last year's backup again before creating the final PDF.`);
   setStatus(createStatus, '');
+  confirmAndContinue.disabled = true;
 });
 
-syncSeasonFields();
+syncSeasonFields({ resetBackupFolder: true });
 
 closePreview.addEventListener('click', hidePreview);
 previewModal.addEventListener('click', (event) => {

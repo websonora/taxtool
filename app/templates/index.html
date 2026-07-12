@@ -19,6 +19,9 @@
       <div class="season-panel">
         <label>Income tax season
           <select id="incomeTaxSeason">
+            <option value="2022">2022 season</option>
+            <option value="2023">2023 season</option>
+            <option value="2024">2024 season</option>
             <option value="2025" selected>2025 season</option>
             <option value="2026">2026 season</option>
             <option value="2027">2027 season</option>
@@ -36,9 +39,18 @@
       <div class="mode-grid">
         <div class="mode-panel">
           <h3>Shared folder mode</h3>
-          <p class="hint">Use this when the Linux server has the office document share mounted.</p>
-          <label>Backup year to search
-            <input id="sharedYear" type="text" value="2024" maxlength="4" readonly>
+          <p class="hint">Use this when this Windows app can see <code>C:\TaxPortalTest</code>. The app normally searches one year before the season, but you can choose a different backup folder.</p>
+          <label>Backup folder to search
+            <select id="sharedYear">
+              <option value="2022">2022</option>
+              <option value="2023">2023</option>
+              <option value="2024" selected>2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+              <option value="2028">2028</option>
+              <option value="2029">2029</option>
+            </select>
           </label>
           <label>Search client filename
             <input id="sharedQuery" type="text" placeholder="Juan Garcia">
@@ -72,10 +84,26 @@
       <label>Output filename
         <input id="clientFilename" type="text" placeholder="Juan Garcia.pdf">
       </label>
-      <label>New PDFs: W-2, 1099, etc.
-        <input id="newPdfs" type="file" accept="application/pdf" multiple>
-      </label>
+      <div class="mode-grid">
+        <div class="mode-panel">
+          <h3>Cliente Actual scanned documents</h3>
+          <p class="hint">Search <code>C:\TaxPortalTest\[season]\Cliente Actual</code>, then choose the new scanned PDFs to merge after the kept old pages.</p>
+          <label>Search new document filename
+            <input id="currentQuery" type="text" placeholder="W2, 1099, client name">
+          </label>
+          <button id="searchCurrent" type="button">Search Cliente Actual</button>
+          <div id="currentResults" class="results selectable-results"></div>
+        </div>
+        <div class="mode-panel">
+          <h3>Manual upload fallback</h3>
+          <p class="hint">Use this only if the scanned files are not visible from Cliente Actual yet.</p>
+          <label>New PDFs: W-2, 1099, etc.
+            <input id="newPdfs" type="file" accept="application/pdf" multiple>
+          </label>
+        </div>
+      </div>
       <button id="createBackup">Create Backup PDF</button>
+      <button id="confirmAndContinue" type="button" class="secondary-button" disabled>Everything went OK — continue with next document</button>
       <p id="createStatus" class="status"></p>
     </section>
   </main>

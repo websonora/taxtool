@@ -22,7 +22,10 @@ DATA_DIR = Path(os.getenv("TAX_PORTAL_DATA_DIR", PROJECT_ROOT / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 OUTPUT_DIR = DATA_DIR / "output"
 TEMP_DIR = DATA_DIR / "temp"
-DOCUMENT_ROOT = Path(os.getenv("TAX_PORTAL_DOCUMENT_ROOT")) if os.getenv("TAX_PORTAL_DOCUMENT_ROOT") else None
+document_root_env = os.getenv("TAX_PORTAL_DOCUMENT_ROOT")
+DEFAULT_WINDOWS_DOCUMENT_ROOT = Path(r"C:\TaxPortalTest")
+DOCUMENT_ROOT = Path(document_root_env) if document_root_env else DEFAULT_WINDOWS_DOCUMENT_ROOT if os.name == "nt" else None
+CLIENTE_ACTUAL_FOLDER_NAME = "Cliente Actual"
 
 UPLOADED_PRIOR_PDFS: dict[str, Path] = {}
 CREATED_OUTPUTS: dict[str, Path] = {}
@@ -70,6 +73,40 @@ def _safe_shared_pdf_path(relative_path: str) -> Path:
     if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="Shared PDF not found")
     return candidate
+
+
+def _pdf_result(path: Path, root: Path, year: str) -> dict:
+    return {
+        "filename": path.name,
+        "relative_path": path.relative_to(root).as_posix(),
+        "year": year,
+    }
+
+
+def _search_pdfs(folder: Path, root: Path, year: str, query: str) -> list[dict]:
+    if not folder.exists():
+        return []
+
+    needle = query.casefold().strip()
+    results = []
+    for path in sorted(folder.rglob("*.pdf")):
+        if needle and needle not in path.name.casefold():
+            continue
+        results.append(_pdf_result(path, root, year))
+        if len(results) >= 50:
+            break
+    return results
+
+
+def _safe_current_pdf_path(relative_path: str, tax_year: str) -> Path:
+    source = _safe_shared_pdf_path(relative_path)
+    root = _require_document_root().resolve()
+    cliente_actual = (root / tax_year / CLIENTE_ACTUAL_FOLDER_NAME).resolve()
+    try:
+        source.resolve().relative_to(cliente_actual)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Current document must be inside Cliente Actual for the selected season") from exc
+    return source
 
 
 def _output_base_dir() -> Path:
@@ -128,24 +165,21 @@ def search_shared_prior_pdfs(
 ) -> dict:
     root = _require_document_root()
     year_dir = root / year
-    if not year_dir.exists():
-        return {"document_root": str(root), "results": []}
+    return {"document_root": str(root), "results": _search_pdfs(year_dir, root, year, query)}
 
-    needle = query.casefold().strip()
-    results = []
-    for path in sorted(year_dir.rglob("*.pdf")):
-        if needle and needle not in path.name.casefold():
-            continue
-        results.append(
-            {
-                "filename": path.name,
-                "relative_path": path.relative_to(root).as_posix(),
-                "year": year,
-            }
-        )
-        if len(results) >= 50:
-            break
-    return {"document_root": str(root), "results": results}
+
+@app.get("/api/shared/current-pdfs")
+def search_shared_current_pdfs(
+    year: Annotated[str, Query(min_length=4, max_length=4)],
+    query: str = "",
+) -> dict:
+    root = _require_document_root()
+    cliente_actual = root / year / CLIENTE_ACTUAL_FOLDER_NAME
+    return {
+        "document_root": str(root),
+        "cliente_actual_folder": str(cliente_actual),
+        "results": _search_pdfs(cliente_actual, root, year, query),
+    }
 
 
 @app.post("/api/shared/prior-pdf")
@@ -180,6 +214,7 @@ def create_backup(
     selected_pages: Annotated[str, Form(...)],
     tax_year: Annotated[str, Form(...)],
     client_filename: Annotated[str, Form(...)],
+    current_shared_paths: list[str] | None = Form(default=None),
     current_year_files: list[UploadFile] | None = File(default=None),
 ) -> dict:
     source = UPLOADED_PRIOR_PDFS.get(document_id)
@@ -194,6 +229,11 @@ def create_backup(
 
     merge_inputs: list[Path] = [selected_pdf]
     saved_current_year_files: list[str] = []
+    for relative_path in current_shared_paths or []:
+        shared_source = _safe_current_pdf_path(relative_path, tax_year)
+        merge_inputs.append(shared_source)
+        saved_current_year_files.append(shared_source.relative_to(_require_document_root()).as_posix())
+
     for upload in current_year_files or []:
         if upload.filename:
             _require_pdf(upload)

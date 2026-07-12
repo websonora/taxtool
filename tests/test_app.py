@@ -170,6 +170,49 @@ def test_create_backup_with_document_root_saves_into_tax_year_folder(monkeypatch
     assert (main.DOCUMENT_ROOT / "audit.jsonl").exists()
 
 
+def test_search_current_pdfs_lists_cliente_actual_documents(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan W2.pdf", ["new w2"])
+    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Maria 1099.pdf", ["new 1099"])
+    client = TestClient(main.app)
+
+    response = client.get("/api/shared/current-pdfs", params={"year": "2025", "query": "juan"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cliente_actual_folder"] == str(main.DOCUMENT_ROOT / "2025" / "Cliente Actual")
+    assert payload["results"] == [
+        {"filename": "Juan W2.pdf", "relative_path": "2025/Cliente Actual/Juan W2.pdf", "year": "2025"}
+    ]
+
+
+def test_create_backup_can_merge_selected_cliente_actual_files(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id", "old w2"])
+    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan W2.pdf", ["new w2"])
+    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan 1099.pdf", ["new 1099"])
+    client = TestClient(main.app)
+
+    open_response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/Juan Garcia.pdf"})
+    document_id = open_response.json()["document_id"]
+
+    response = client.post(
+        "/api/create-backup",
+        data={
+            "document_id": document_id,
+            "selected_pages": "1",
+            "tax_year": "2025",
+            "client_filename": "Juan Garcia.pdf",
+            "current_shared_paths": ["2025/Cliente Actual/Juan W2.pdf", "2025/Cliente Actual/Juan 1099.pdf"],
+        },
+    )
+
+    assert response.status_code == 200
+    output_path = Path(response.json()["output_path"])
+    assert output_path == main.DOCUMENT_ROOT / "2025" / "Juan Garcia.pdf"
+    assert get_page_count(output_path) == 3
+
+
 def test_create_backup_returns_download_url_and_download_endpoint_serves_pdf(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path)
     prior = make_pdf(tmp_path / "prior.pdf", ["old id"])
@@ -243,10 +286,25 @@ def test_root_ui_includes_income_tax_season_selector():
 
     assert response.status_code == 200
     assert "incomeTaxSeason" in response.text
+    assert "2022 season" in response.text
+    assert "2023 season" in response.text
+    assert "2024 season" in response.text
     assert "2025 season" in response.text
     assert "2026 season" in response.text
-    assert "Backup year to search" in response.text
+    assert "Backup folder to search" in response.text
     assert "Final document save folder" in response.text
+
+
+def test_root_ui_includes_cliente_actual_and_continue_controls():
+    client = TestClient(main.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Cliente Actual" in response.text
+    assert "Search Cliente Actual" in response.text
+    assert "confirmAndContinue" in response.text
+    assert "Everything went OK" in response.text
 
 
 def test_frontend_script_builds_preview_and_delete_controls():
@@ -264,6 +322,8 @@ def test_frontend_script_syncs_income_tax_season_to_backup_and_output_years():
     assert "incomeTaxSeason" in script
     assert "backupYearForSeason" in script
     assert "Number.parseInt(season, 10) - 1" in script
-    assert "sharedYear.value = backupYear" in script
+    assert "resetBackupFolder" in script
+    assert "sharedYear.value = defaultBackupYear" in script
     assert "taxYear.value = season" in script
     assert "clearActiveDocument" in script
+    assert "selectedCurrentPdfs" in script
