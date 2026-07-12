@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.pdf_service import (
@@ -25,6 +25,7 @@ TEMP_DIR = DATA_DIR / "temp"
 DOCUMENT_ROOT = Path(os.getenv("TAX_PORTAL_DOCUMENT_ROOT")) if os.getenv("TAX_PORTAL_DOCUMENT_ROOT") else None
 
 UPLOADED_PRIOR_PDFS: dict[str, Path] = {}
+CREATED_OUTPUTS: dict[str, Path] = {}
 
 app = FastAPI(title="Tax Document Backup Portal")
 app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "app" / "static"), name="static")
@@ -75,10 +76,29 @@ def _output_base_dir() -> Path:
     return DOCUMENT_ROOT if DOCUMENT_ROOT is not None else OUTPUT_DIR
 
 
+def _output_id() -> str:
+    return uuid.uuid4().hex
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     index_path = PROJECT_ROOT / "app" / "templates" / "index.html"
     return index_path.read_text(encoding="utf-8")
+
+
+@app.get("/api/health")
+def health() -> dict:
+    output_base = _output_base_dir()
+    document_root_exists = DOCUMENT_ROOT.exists() if DOCUMENT_ROOT is not None else False
+    output_base_exists = output_base.exists()
+    return {
+        "ok": DOCUMENT_ROOT is None or document_root_exists,
+        "document_root_configured": DOCUMENT_ROOT is not None,
+        "document_root": str(DOCUMENT_ROOT) if DOCUMENT_ROOT is not None else None,
+        "document_root_exists": document_root_exists,
+        "output_base": str(output_base),
+        "output_base_exists": output_base_exists,
+    }
 
 
 @app.post("/api/prior-pdf")
@@ -187,6 +207,8 @@ def create_backup(
     output_base = _output_base_dir()
     output_path = resolve_output_path(output_base, tax_year, client_filename)
     merge_pdfs(merge_inputs, output_path)
+    output_id = _output_id()
+    CREATED_OUTPUTS[output_id] = output_path
 
     record = {
         "document_id": document_id,
@@ -201,6 +223,16 @@ def create_backup(
 
     return {
         "ok": True,
+        "output_id": output_id,
         "output_path": str(output_path),
+        "download_url": f"/api/output/{output_id}/download",
         "audit": record,
     }
+
+
+@app.get("/api/output/{output_id}/download")
+def download_output(output_id: str) -> FileResponse:
+    output_path = CREATED_OUTPUTS.get(output_id)
+    if output_path is None or not output_path.exists():
+        raise HTTPException(status_code=404, detail="Output PDF not found")
+    return FileResponse(output_path, media_type="application/pdf", filename=output_path.name)

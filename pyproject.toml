@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "tax-document-backup-portal"
 version = "0.1.0"
@@ -9,6 +13,10 @@ dependencies = [
     "python-multipart",
     "PyMuPDF",
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["data*", "tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

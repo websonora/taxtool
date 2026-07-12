@@ -168,3 +168,102 @@ def test_create_backup_with_document_root_saves_into_tax_year_folder(monkeypatch
     assert output_path.exists()
     assert get_page_count(output_path) == 2
     assert (main.DOCUMENT_ROOT / "audit.jsonl").exists()
+
+
+def test_create_backup_returns_download_url_and_download_endpoint_serves_pdf(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path)
+    prior = make_pdf(tmp_path / "prior.pdf", ["old id"])
+    client = TestClient(main.app)
+
+    with prior.open("rb") as handle:
+        upload = client.post("/api/prior-pdf", files={"file": ("prior.pdf", handle, "application/pdf")})
+    document_id = upload.json()["document_id"]
+
+    response = client.post(
+        "/api/create-backup",
+        data={
+            "document_id": document_id,
+            "selected_pages": "1",
+            "tax_year": "2025",
+            "client_filename": "Juan Garcia.pdf",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["output_id"]
+    assert payload["download_url"] == f"/api/output/{payload['output_id']}/download"
+
+    download = client.get(payload["download_url"])
+
+    assert download.status_code == 200
+    assert download.headers["content-type"] == "application/pdf"
+    assert download.content.startswith(b"%PDF")
+
+
+def test_download_endpoint_rejects_unknown_output_id(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path)
+    client = TestClient(main.app)
+
+    response = client.get("/api/output/not-real/download")
+
+    assert response.status_code == 404
+
+
+def test_health_reports_shared_folder_status(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    main.DOCUMENT_ROOT.mkdir(parents=True)
+    client = TestClient(main.app)
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["document_root_configured"] is True
+    assert payload["document_root_exists"] is True
+    assert payload["output_base"] == str(main.DOCUMENT_ROOT)
+
+
+def test_root_ui_includes_page_preview_modal_and_delete_workflow_copy():
+    client = TestClient(main.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "previewModal" in response.text
+    assert "Preview pages before deciding what to delete" in response.text
+    assert "Marked Delete" in response.text
+
+
+def test_root_ui_includes_income_tax_season_selector():
+    client = TestClient(main.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "incomeTaxSeason" in response.text
+    assert "2025 season" in response.text
+    assert "2026 season" in response.text
+    assert "Backup year to search" in response.text
+    assert "Final document save folder" in response.text
+
+
+def test_frontend_script_builds_preview_and_delete_controls():
+    script = (main.PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "pagesToDelete" in script
+    assert "Preview" in script
+    assert "Mark Delete" in script
+    assert "openPreview" in script
+
+
+def test_frontend_script_syncs_income_tax_season_to_backup_and_output_years():
+    script = (main.PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "incomeTaxSeason" in script
+    assert "backupYearForSeason" in script
+    assert "Number.parseInt(season, 10) - 1" in script
+    assert "sharedYear.value = backupYear" in script
+    assert "taxYear.value = season" in script
+    assert "clearActiveDocument" in script

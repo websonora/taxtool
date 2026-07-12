@@ -11,18 +11,34 @@
     <header>
       <p class="eyebrow">Websonora MVP</p>
       <h1>Tax Document Backup Portal</h1>
-      <p class="subtitle">Open a prior-year PDF, click pages to keep, add current-year PDFs, and create the new backup file.</p>
+      <p class="subtitle">Choose the income tax season, open last year's backup, mark old pages to delete, add current-season documents, and save the final PDF into the selected season folder.</p>
     </header>
 
     <section class="card">
-      <h2>1. Select prior-year PDF</h2>
+      <h2>1. Choose income tax season</h2>
+      <div class="season-panel">
+        <label>Income tax season
+          <select id="incomeTaxSeason">
+            <option value="2025" selected>2025 season</option>
+            <option value="2026">2026 season</option>
+            <option value="2027">2027 season</option>
+            <option value="2028">2028 season</option>
+            <option value="2029">2029 season</option>
+          </select>
+        </label>
+        <p id="seasonSummary" class="season-summary"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Select last year's backup PDF</h2>
 
       <div class="mode-grid">
         <div class="mode-panel">
           <h3>Shared folder mode</h3>
           <p class="hint">Use this when the Linux server has the office document share mounted.</p>
-          <label>Prior year
-            <input id="sharedYear" type="text" value="2024" maxlength="4">
+          <label>Backup year to search
+            <input id="sharedYear" type="text" value="2024" maxlength="4" readonly>
           </label>
           <label>Search client filename
             <input id="sharedQuery" type="text" placeholder="Juan Garcia">
@@ -43,15 +59,15 @@
     </section>
 
     <section class="card">
-      <h2>2. Click pages to keep</h2>
-      <p class="hint">Selected pages turn blue. These will be carried forward from the old PDF.</p>
+      <h2>3. Review last year's pages</h2>
+      <p class="hint">Preview pages before deciding what to delete. Pages are kept by default; use <strong>Marked Delete</strong> only for pages that should not carry forward.</p>
       <div id="thumbnailGrid" class="thumbnail-grid"></div>
     </section>
 
     <section class="card">
-      <h2>3. Add current-year documents</h2>
-      <label>Tax year
-        <input id="taxYear" type="text" value="2025" maxlength="4">
+      <h2>4. Add current-season documents</h2>
+      <label>Final document save folder
+        <input id="taxYear" type="text" value="2025" maxlength="4" readonly>
       </label>
       <label>Output filename
         <input id="clientFilename" type="text" placeholder="Juan Garcia.pdf">
@@ -63,6 +79,18 @@
       <p id="createStatus" class="status"></p>
     </section>
   </main>
+
+  <div id="previewModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-preview></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+      <div class="modal-header">
+        <h2 id="previewTitle">Page Preview</h2>
+        <button id="closePreview" type="button" class="secondary-button">Close</button>
+      </div>
+      <img id="previewImage" class="preview-image" alt="Selected PDF page preview">
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
