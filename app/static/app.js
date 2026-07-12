@@ -233,11 +233,11 @@ searchCurrent.addEventListener('click', async () => {
     year: taxYear.value.trim(),
     query: currentQuery.value.trim(),
   });
-  setStatus(createStatus, 'Searching Cliente Actual...');
+  setStatus(createStatus, 'Searching CienteActual...');
 
   const response = await fetch(`/api/shared/current-pdfs?${params}`);
   if (!response.ok) {
-    setStatus(createStatus, 'Cliente Actual folder is not configured or not reachable. Use manual upload fallback for now.', true);
+    setStatus(createStatus, 'CienteActual folder is not configured or not reachable. Use manual upload fallback for now.', true);
     return;
   }
 

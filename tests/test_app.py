@@ -170,27 +170,27 @@ def test_create_backup_with_document_root_saves_into_tax_year_folder(monkeypatch
     assert (main.DOCUMENT_ROOT / "audit.jsonl").exists()
 
 
-def test_search_current_pdfs_lists_cliente_actual_documents(monkeypatch, tmp_path):
+def test_search_current_pdfs_lists_current_scans_documents(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
-    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan W2.pdf", ["new w2"])
-    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Maria 1099.pdf", ["new 1099"])
+    make_pdf(main.DOCUMENT_ROOT / "CienteActual" / "Juan W2.pdf", ["new w2"])
+    make_pdf(main.DOCUMENT_ROOT / "CienteActual" / "Maria 1099.pdf", ["new 1099"])
     client = TestClient(main.app)
 
     response = client.get("/api/shared/current-pdfs", params={"year": "2025", "query": "juan"})
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["cliente_actual_folder"] == str(main.DOCUMENT_ROOT / "2025" / "Cliente Actual")
+    assert payload["current_scans_folder"] == str(main.DOCUMENT_ROOT / "CienteActual")
     assert payload["results"] == [
-        {"filename": "Juan W2.pdf", "relative_path": "2025/Cliente Actual/Juan W2.pdf", "year": "2025"}
+        {"filename": "Juan W2.pdf", "relative_path": "CienteActual/Juan W2.pdf", "year": "2025"}
     ]
 
 
-def test_create_backup_can_merge_selected_cliente_actual_files(monkeypatch, tmp_path):
+def test_create_backup_can_merge_selected_current_scans_files(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
     make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id", "old w2"])
-    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan W2.pdf", ["new w2"])
-    make_pdf(main.DOCUMENT_ROOT / "2025" / "Cliente Actual" / "Juan 1099.pdf", ["new 1099"])
+    make_pdf(main.DOCUMENT_ROOT / "CienteActual" / "Juan W2.pdf", ["new w2"])
+    make_pdf(main.DOCUMENT_ROOT / "CienteActual" / "Juan 1099.pdf", ["new 1099"])
     client = TestClient(main.app)
 
     open_response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/Juan Garcia.pdf"})
@@ -203,7 +203,7 @@ def test_create_backup_can_merge_selected_cliente_actual_files(monkeypatch, tmp_
             "selected_pages": "1",
             "tax_year": "2025",
             "client_filename": "Juan Garcia.pdf",
-            "current_shared_paths": ["2025/Cliente Actual/Juan W2.pdf", "2025/Cliente Actual/Juan 1099.pdf"],
+            "current_shared_paths": ["CienteActual/Juan W2.pdf", "CienteActual/Juan 1099.pdf"],
         },
     )
 
@@ -295,14 +295,14 @@ def test_root_ui_includes_income_tax_season_selector():
     assert "Final document save folder" in response.text
 
 
-def test_root_ui_includes_cliente_actual_and_continue_controls():
+def test_root_ui_includes_current_scans_and_continue_controls():
     client = TestClient(main.app)
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Cliente Actual" in response.text
-    assert "Search Cliente Actual" in response.text
+    assert "CienteActual" in response.text
+    assert "Search CienteActual" in response.text
     assert "confirmAndContinue" in response.text
     assert "Everything went OK" in response.text
 

@@ -23,9 +23,9 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 OUTPUT_DIR = DATA_DIR / "output"
 TEMP_DIR = DATA_DIR / "temp"
 document_root_env = os.getenv("TAX_PORTAL_DOCUMENT_ROOT")
-DEFAULT_WINDOWS_DOCUMENT_ROOT = Path(r"C:\TaxPortalTest")
+DEFAULT_WINDOWS_DOCUMENT_ROOT = Path(r"C:\INCOME TAX REPORTS")
 DOCUMENT_ROOT = Path(document_root_env) if document_root_env else DEFAULT_WINDOWS_DOCUMENT_ROOT if os.name == "nt" else None
-CLIENTE_ACTUAL_FOLDER_NAME = "Cliente Actual"
+CURRENT_SCANS_FOLDER_NAME = "CienteActual"
 
 UPLOADED_PRIOR_PDFS: dict[str, Path] = {}
 CREATED_OUTPUTS: dict[str, Path] = {}
@@ -98,14 +98,21 @@ def _search_pdfs(folder: Path, root: Path, year: str, query: str) -> list[dict]:
     return results
 
 
+def _current_scans_dir(root: Path, tax_year: str) -> Path:
+    root_level_scans = root / CURRENT_SCANS_FOLDER_NAME
+    if root_level_scans.exists():
+        return root_level_scans
+    return root / tax_year / CURRENT_SCANS_FOLDER_NAME
+
+
 def _safe_current_pdf_path(relative_path: str, tax_year: str) -> Path:
     source = _safe_shared_pdf_path(relative_path)
     root = _require_document_root().resolve()
-    cliente_actual = (root / tax_year / CLIENTE_ACTUAL_FOLDER_NAME).resolve()
+    current_scans = _current_scans_dir(root, tax_year).resolve()
     try:
-        source.resolve().relative_to(cliente_actual)
+        source.resolve().relative_to(current_scans)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Current document must be inside Cliente Actual for the selected season") from exc
+        raise HTTPException(status_code=400, detail="Current document must be inside CienteActual") from exc
     return source
 
 
@@ -174,11 +181,12 @@ def search_shared_current_pdfs(
     query: str = "",
 ) -> dict:
     root = _require_document_root()
-    cliente_actual = root / year / CLIENTE_ACTUAL_FOLDER_NAME
+    current_scans = _current_scans_dir(root, year)
     return {
         "document_root": str(root),
-        "cliente_actual_folder": str(cliente_actual),
-        "results": _search_pdfs(cliente_actual, root, year, query),
+        "current_scans_folder": str(current_scans),
+        "cliente_actual_folder": str(current_scans),
+        "results": _search_pdfs(current_scans, root, year, query),
     }
 
 
