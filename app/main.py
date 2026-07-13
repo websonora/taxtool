@@ -23,9 +23,9 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 OUTPUT_DIR = DATA_DIR / "output"
 TEMP_DIR = DATA_DIR / "temp"
 document_root_env = os.getenv("TAX_PORTAL_DOCUMENT_ROOT")
-DEFAULT_WINDOWS_DOCUMENT_ROOT = Path(r"C:\INCOME TAX REPORTS")
+DEFAULT_WINDOWS_DOCUMENT_ROOT = Path(r"T:\INCOME TAX REPORTS")
 DOCUMENT_ROOT = Path(document_root_env) if document_root_env else DEFAULT_WINDOWS_DOCUMENT_ROOT if os.name == "nt" else None
-CURRENT_SCANS_FOLDER_NAME = "CienteActual"
+CURRENT_SCANS_FOLDER_NAMES = ("ClienteActual", "CienteActual")
 
 UPLOADED_PRIOR_PDFS: dict[str, Path] = {}
 CREATED_OUTPUTS: dict[str, Path] = {}
@@ -99,10 +99,11 @@ def _search_pdfs(folder: Path, root: Path, year: str, query: str) -> list[dict]:
 
 
 def _current_scans_dir(root: Path, tax_year: str) -> Path:
-    root_level_scans = root / CURRENT_SCANS_FOLDER_NAME
-    if root_level_scans.exists():
-        return root_level_scans
-    return root / tax_year / CURRENT_SCANS_FOLDER_NAME
+    for folder_name in CURRENT_SCANS_FOLDER_NAMES:
+        root_level_scans = root / folder_name
+        if root_level_scans.exists():
+            return root_level_scans
+    return root / tax_year / CURRENT_SCANS_FOLDER_NAMES[0]
 
 
 def _safe_current_pdf_path(relative_path: str, tax_year: str) -> Path:
@@ -112,7 +113,7 @@ def _safe_current_pdf_path(relative_path: str, tax_year: str) -> Path:
     try:
         source.resolve().relative_to(current_scans)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Current document must be inside CienteActual") from exc
+        raise HTTPException(status_code=400, detail="Current document must be inside ClienteActual/CienteActual") from exc
     return source
 
 
