@@ -186,6 +186,18 @@ def test_search_current_pdfs_lists_current_scans_documents(monkeypatch, tmp_path
     ]
 
 
+def test_search_current_pdfs_missing_folder_reports_root_level_scanner_path(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    client = TestClient(main.app)
+
+    response = client.get("/api/shared/current-pdfs", params={"year": "2025", "query": "juan"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current_scans_folder"] == str(main.DOCUMENT_ROOT / "ClienteActual")
+    assert payload["results"] == []
+
+
 def test_search_current_pdfs_supports_existing_cienteactual_folder(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
     make_pdf(main.DOCUMENT_ROOT / "CienteActual" / "Juan W2.pdf", ["new w2"])

@@ -99,11 +99,12 @@ def _search_pdfs(folder: Path, root: Path, year: str, query: str) -> list[dict]:
 
 
 def _current_scans_dir(root: Path, tax_year: str) -> Path:
+    del tax_year  # Scanner intake is root-level, not season-nested.
     for folder_name in CURRENT_SCANS_FOLDER_NAMES:
         root_level_scans = root / folder_name
         if root_level_scans.exists():
             return root_level_scans
-    return root / tax_year / CURRENT_SCANS_FOLDER_NAMES[0]
+    return root / CURRENT_SCANS_FOLDER_NAMES[0]
 
 
 def _safe_current_pdf_path(relative_path: str, tax_year: str) -> Path:
