@@ -468,6 +468,15 @@ def test_root_ui_includes_current_scans_and_continue_controls():
     assert "Everything went OK" in response.text
 
 
+def test_root_ui_uses_versioned_app_script_for_cache_busting():
+    client = TestClient(main.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert '<script src="/static/app.js?v=' in response.text
+
+
 def test_frontend_script_builds_preview_and_delete_controls():
     script = (main.PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
 
