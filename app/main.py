@@ -97,13 +97,32 @@ def _require_document_root() -> Path:
     return DOCUMENT_ROOT
 
 
-def _safe_shared_pdf_path(relative_path: str) -> Path:
-    root = _require_document_root().resolve()
-    candidate = (root / relative_path).resolve()
+def _safe_resolve(path: Path) -> Path:
     try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid shared PDF path") from exc
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _relative_to_root(path: Path, root: Path) -> str:
+    candidates = (
+        (path, root),
+        (_safe_resolve(path), _safe_resolve(root)),
+        (path, _safe_resolve(root)),
+        (_safe_resolve(path), root),
+    )
+    for candidate_path, candidate_root in candidates:
+        try:
+            return candidate_path.relative_to(candidate_root).as_posix()
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="Invalid shared PDF path")
+
+
+def _safe_shared_pdf_path(relative_path: str) -> Path:
+    root = _safe_resolve(_require_document_root())
+    candidate = _safe_resolve(root / relative_path)
+    _relative_to_root(candidate, root)
     if candidate.suffix.lower() != ".pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     if not candidate.exists() or not candidate.is_file():
@@ -114,7 +133,7 @@ def _safe_shared_pdf_path(relative_path: str) -> Path:
 def _pdf_result(path: Path, root: Path, year: str) -> dict:
     return {
         "filename": path.name,
-        "relative_path": path.relative_to(root).as_posix(),
+        "relative_path": _relative_to_root(path, root),
         "year": year,
     }
 
@@ -262,7 +281,7 @@ def open_shared_prior_pdf(relative_path: Annotated[str, Form(...)]) -> dict:
         "document_id": document_id,
         "filename": source.name,
         "page_count": get_page_count(source),
-        "relative_path": source.relative_to(_require_document_root()).as_posix(),
+        "relative_path": _relative_to_root(source, _require_document_root()),
     }
 
 
@@ -303,7 +322,7 @@ def create_backup(
     for relative_path in current_shared_paths or []:
         shared_source = _safe_current_pdf_path(relative_path, tax_year)
         merge_inputs.append(shared_source)
-        saved_current_year_files.append(shared_source.relative_to(_require_document_root()).as_posix())
+        saved_current_year_files.append(_relative_to_root(shared_source, _require_document_root()))
 
     for upload in current_year_files or []:
         if upload.filename:

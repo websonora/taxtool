@@ -132,6 +132,32 @@ def test_open_prior_pdf_from_document_root_registers_document(monkeypatch, tmp_p
     assert main.UPLOADED_PRIOR_PDFS[payload["document_id"]] == main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf"
 
 
+def test_open_prior_pdf_handles_mapped_drive_resolving_to_unc(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    assert main.DOCUMENT_ROOT is not None
+    mapped_root = main.DOCUMENT_ROOT
+    unc_root = tmp_path / "unc-share" / "INCOME TAX REPORTS"
+    source_pdf = make_pdf(unc_root / "2024" / "LEAL RAMON.pdf", ["old id"])
+    original_resolve = Path.resolve
+
+    def mapped_drive_resolve(self, *args, **kwargs):
+        try:
+            relative = self.relative_to(mapped_root)
+        except ValueError:
+            return original_resolve(self, *args, **kwargs)
+        return unc_root / relative
+
+    monkeypatch.setattr(Path, "resolve", mapped_drive_resolve)
+    client = TestClient(main.app, raise_server_exceptions=False)
+
+    response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/LEAL RAMON.pdf"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["relative_path"] == "2024/LEAL RAMON.pdf"
+    assert main.UPLOADED_PRIOR_PDFS[payload["document_id"]] == source_pdf
+
+
 def test_open_prior_pdf_from_document_root_rejects_traversal(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
     client = TestClient(main.app)
