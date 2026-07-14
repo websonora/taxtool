@@ -213,6 +213,34 @@ def test_search_current_pdfs_supports_existing_cienteactual_folder(monkeypatch, 
     ]
 
 
+def test_last_error_endpoint_reports_no_errors_by_default(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path)
+    client = TestClient(main.app)
+
+    response = client.get("/api/last-error")
+
+    assert response.status_code == 200
+    assert response.text == "No server error has been logged yet."
+
+
+def test_unhandled_errors_are_logged_and_return_error_id(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path)
+
+    @main.app.get("/test-only-unhandled-error")
+    def test_only_unhandled_error():
+        raise RuntimeError("diagnostic failure")
+
+    client = TestClient(main.app, raise_server_exceptions=False)
+
+    response = client.get("/test-only-unhandled-error")
+
+    assert response.status_code == 500
+    assert "Error ID:" in response.text
+    log_content = (main.DATA_DIR / "server-error.log").read_text(encoding="utf-8")
+    assert "RuntimeError" in log_content
+    assert "diagnostic failure" in log_content
+
+
 def test_search_current_pdfs_unreachable_folder_returns_clear_400(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
     assert main.DOCUMENT_ROOT is not None

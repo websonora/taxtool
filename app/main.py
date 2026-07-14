@@ -1,12 +1,14 @@
 import json
 import os
 import shutil
+import traceback
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.pdf_service import (
@@ -32,6 +34,40 @@ CREATED_OUTPUTS: dict[str, Path] = {}
 
 app = FastAPI(title="Tax Document Backup Portal")
 app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "app" / "static"), name="static")
+
+
+def _error_log_path() -> Path:
+    return DATA_DIR / "server-error.log"
+
+
+def _record_unhandled_error(request: Request, exc: Exception) -> str:
+    error_id = uuid.uuid4().hex[:8]
+    timestamp = datetime.now(timezone.utc).isoformat()
+    log_entry = (
+        f"\n--- Tax Portal Server Error {error_id} ---\n"
+        f"time_utc: {timestamp}\n"
+        f"method: {request.method}\n"
+        f"url: {request.url}\n"
+        f"error_type: {type(exc).__name__}\n"
+        f"error: {exc}\n"
+        f"traceback:\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
+    )
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _error_log_path().open("a", encoding="utf-8").write(log_entry)
+    except OSError:
+        # If the configured data directory is unavailable, still return the error ID.
+        pass
+    return error_id
+
+
+@app.exception_handler(Exception)
+def unhandled_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:
+    error_id = _record_unhandled_error(request, exc)
+    return PlainTextResponse(
+        f"Internal Server Error. Error ID: {error_id}. Open /api/last-error or read data/server-error.log on the app machine.",
+        status_code=500,
+    )
 
 
 def _ensure_dirs() -> None:
@@ -157,6 +193,19 @@ def health() -> dict:
         "output_base": str(output_base),
         "output_base_exists": output_base_exists,
     }
+
+
+@app.get("/api/last-error", response_class=PlainTextResponse)
+def last_error() -> str:
+    log_path = _error_log_path()
+    if not log_path.exists():
+        return "No server error has been logged yet."
+    content = log_path.read_text(encoding="utf-8", errors="replace")
+    marker = "\n--- Tax Portal Server Error "
+    last_marker = content.rfind(marker)
+    if last_marker == -1:
+        return content[-8000:]
+    return content[last_marker:].strip()[-8000:]
 
 
 @app.post("/api/prior-pdf")
