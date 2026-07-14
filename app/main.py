@@ -83,13 +83,25 @@ def _pdf_result(path: Path, root: Path, year: str) -> dict:
     }
 
 
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def _search_pdfs(folder: Path, root: Path, year: str, query: str) -> list[dict]:
-    if not folder.exists():
+    if not _path_exists(folder):
         return []
 
     needle = query.casefold().strip()
     results = []
-    for path in sorted(folder.rglob("*.pdf")):
+    try:
+        matching_pdfs = sorted(folder.rglob("*.pdf"))
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Folder is not reachable: {folder}") from exc
+
+    for path in matching_pdfs:
         if needle and needle not in path.name.casefold():
             continue
         results.append(_pdf_result(path, root, year))
@@ -102,7 +114,7 @@ def _current_scans_dir(root: Path, tax_year: str) -> Path:
     del tax_year  # Scanner intake is root-level, not season-nested.
     for folder_name in CURRENT_SCANS_FOLDER_NAMES:
         root_level_scans = root / folder_name
-        if root_level_scans.exists():
+        if _path_exists(root_level_scans):
             return root_level_scans
     return root / CURRENT_SCANS_FOLDER_NAMES[0]
 
@@ -135,8 +147,8 @@ def index() -> str:
 @app.get("/api/health")
 def health() -> dict:
     output_base = _output_base_dir()
-    document_root_exists = DOCUMENT_ROOT.exists() if DOCUMENT_ROOT is not None else False
-    output_base_exists = output_base.exists()
+    document_root_exists = _path_exists(DOCUMENT_ROOT) if DOCUMENT_ROOT is not None else False
+    output_base_exists = _path_exists(output_base)
     return {
         "ok": DOCUMENT_ROOT is None or document_root_exists,
         "document_root_configured": DOCUMENT_ROOT is not None,

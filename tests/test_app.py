@@ -213,6 +213,27 @@ def test_search_current_pdfs_supports_existing_cienteactual_folder(monkeypatch, 
     ]
 
 
+def test_search_current_pdfs_unreachable_folder_returns_clear_400(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    assert main.DOCUMENT_ROOT is not None
+    (main.DOCUMENT_ROOT / "ClienteActual").mkdir(parents=True)
+    original_rglob = Path.rglob
+
+    def failing_rglob(self, pattern):
+        if self.name == "ClienteActual":
+            raise OSError("network path unavailable")
+        return original_rglob(self, pattern)
+
+    monkeypatch.setattr(Path, "rglob", failing_rglob)
+    client = TestClient(main.app, raise_server_exceptions=False)
+
+    response = client.get("/api/shared/current-pdfs", params={"year": "2025", "query": "juan"})
+
+    assert response.status_code == 400
+    assert "Folder is not reachable" in response.json()["detail"]
+    assert "ClienteActual" in response.json()["detail"]
+
+
 def test_create_backup_can_merge_selected_current_scans_files(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
     make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id", "old w2"])
