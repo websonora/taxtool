@@ -18,6 +18,14 @@ def make_pdf(path: Path, labels: list[str]) -> Path:
     return path
 
 
+def pdf_page_texts(path: Path) -> list[str]:
+    doc = fitz.open(path)
+    try:
+        return [doc.load_page(index).get_text() for index in range(doc.page_count)]
+    finally:
+        doc.close()
+
+
 def configure_tmp_data(monkeypatch, tmp_path, with_document_root: bool = False):
     data_dir = tmp_path / "data"
     monkeypatch.setattr(main, "DATA_DIR", data_dir)
@@ -313,6 +321,10 @@ def test_create_backup_can_merge_selected_current_scans_files(monkeypatch, tmp_p
     output_path = Path(response.json()["output_path"])
     assert output_path == main.DOCUMENT_ROOT / "2025" / "Juan Garcia.pdf"
     assert get_page_count(output_path) == 3
+    page_texts = pdf_page_texts(output_path)
+    assert "new w2" in page_texts[0]
+    assert "new 1099" in page_texts[1]
+    assert "old id" in page_texts[2]
 
 
 def test_create_backup_warns_when_requested_output_filename_already_exists(monkeypatch, tmp_path):
@@ -358,7 +370,7 @@ def test_clear_current_scans_deletes_files_after_success_confirmation(monkeypatc
     payload = response.json()
     assert payload["ok"] is True
     assert payload["deleted_count"] == 3
-    assert list(scans.rglob("*.*")) == []
+    assert list(scans.iterdir()) == []
     assert scans.exists()
 
 

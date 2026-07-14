@@ -281,10 +281,13 @@ def clear_shared_current_pdfs(tax_year: Annotated[str, Form(...)]) -> dict:
 
     deleted_count = 0
     try:
-        for path in sorted(current_scans.rglob("*"), reverse=True):
+        for path in current_scans.iterdir():
             if path.is_file() or path.is_symlink():
                 path.unlink()
                 deleted_count += 1
+            elif path.is_dir():
+                deleted_count += sum(1 for child in path.rglob("*") if child.is_file() or child.is_symlink())
+                shutil.rmtree(path)
     except OSError as exc:
         raise HTTPException(status_code=400, detail=f"Could not clear scanner folder: {current_scans}") from exc
 
@@ -336,7 +339,7 @@ def create_backup(
     selected_pdf = TEMP_DIR / f"{work_id}-selected.pdf"
     create_pdf_from_selected_pages(source, pages, selected_pdf)
 
-    merge_inputs: list[Path] = [selected_pdf]
+    merge_inputs: list[Path] = []
     saved_current_year_files: list[str] = []
     for relative_path in current_shared_paths or []:
         shared_source = _safe_current_pdf_path(relative_path, tax_year)
@@ -352,6 +355,9 @@ def create_backup(
                 shutil.copyfileobj(upload.file, handle)
             merge_inputs.append(destination)
             saved_current_year_files.append(clean_name)
+
+    # Current-year scanned documents go first; selected old/prior-year pages go last.
+    merge_inputs.append(selected_pdf)
 
     output_base = _output_base_dir()
     requested_filename = sanitize_filename(client_filename)
