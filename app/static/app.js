@@ -288,6 +288,17 @@ uploadPrior.addEventListener('click', async () => {
   activateDocument(await response.json(), 'Opened uploaded PDF');
 });
 
+async function clearCurrentScannerFolder() {
+  const form = new FormData();
+  syncSeasonFields();
+  form.append('tax_year', taxYear.value.trim());
+  const response = await fetch('/api/shared/current-pdfs/clear', { method: 'POST', body: form });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
 createBackup.addEventListener('click', async () => {
   if (!currentDocumentId) {
     setStatus(createStatus, 'Open a prior-year PDF first.', true);
@@ -323,6 +334,12 @@ createBackup.addEventListener('click', async () => {
   const payload = await response.json();
   createStatus.classList.remove('error');
   createStatus.innerHTML = '';
+  if (payload.warning) {
+    const warningText = document.createElement('span');
+    warningText.className = 'error';
+    warningText.textContent = `${payload.warning} `;
+    createStatus.appendChild(warningText);
+  }
   const message = document.createElement('span');
   message.textContent = `Created: ${payload.output_path} `;
   const link = document.createElement('a');
@@ -334,8 +351,15 @@ createBackup.addEventListener('click', async () => {
   confirmAndContinue.disabled = false;
 });
 
-confirmAndContinue.addEventListener('click', () => {
-  resetForNextDocument();
+confirmAndContinue.addEventListener('click', async () => {
+  try {
+    setStatus(createStatus, 'Clearing scanned intake folder...');
+    const clearPayload = await clearCurrentScannerFolder();
+    resetForNextDocument();
+    setStatus(createStatus, `Scanned intake folder cleared (${clearPayload.deleted_count} file(s) deleted). Ready for the next client document.`);
+  } catch (error) {
+    setStatus(createStatus, `Could not clear scanned intake folder. ${error.message}`, true);
+  }
 });
 
 sharedYear.addEventListener('change', () => {

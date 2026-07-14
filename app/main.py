@@ -272,6 +272,25 @@ def search_shared_current_pdfs(
     }
 
 
+@app.post("/api/shared/current-pdfs/clear")
+def clear_shared_current_pdfs(tax_year: Annotated[str, Form(...)]) -> dict:
+    root = _require_document_root()
+    current_scans = _current_scans_dir(root, tax_year)
+    if not _path_exists(current_scans):
+        return {"ok": True, "deleted_count": 0, "current_scans_folder": str(current_scans)}
+
+    deleted_count = 0
+    try:
+        for path in sorted(current_scans.rglob("*"), reverse=True):
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+                deleted_count += 1
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Could not clear scanner folder: {current_scans}") from exc
+
+    return {"ok": True, "deleted_count": deleted_count, "current_scans_folder": str(current_scans)}
+
+
 @app.post("/api/shared/prior-pdf")
 def open_shared_prior_pdf(relative_path: Annotated[str, Form(...)]) -> dict:
     source = _safe_shared_pdf_path(relative_path)
@@ -335,7 +354,12 @@ def create_backup(
             saved_current_year_files.append(clean_name)
 
     output_base = _output_base_dir()
+    requested_filename = sanitize_filename(client_filename)
+    requested_output_path = Path(output_base) / tax_year / requested_filename
     output_path = resolve_output_path(output_base, tax_year, client_filename)
+    output_warning = None
+    if requested_output_path.exists() and output_path != requested_output_path:
+        output_warning = f"{requested_filename} already exists in {tax_year}. Saved as {output_path.name}."
     merge_pdfs(merge_inputs, output_path)
     output_id = _output_id()
     CREATED_OUTPUTS[output_id] = output_path
@@ -348,6 +372,7 @@ def create_backup(
         "client_filename": sanitize_filename(client_filename),
         "current_year_files": saved_current_year_files,
         "output_path": str(output_path),
+        "warning": output_warning,
     }
     append_audit_log(output_base, record)
 
@@ -356,6 +381,7 @@ def create_backup(
         "output_id": output_id,
         "output_path": str(output_path),
         "download_url": f"/api/output/{output_id}/download",
+        "warning": output_warning,
         "audit": record,
     }
 

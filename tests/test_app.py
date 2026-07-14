@@ -315,6 +315,53 @@ def test_create_backup_can_merge_selected_current_scans_files(monkeypatch, tmp_p
     assert get_page_count(output_path) == 3
 
 
+def test_create_backup_warns_when_requested_output_filename_already_exists(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    assert main.DOCUMENT_ROOT is not None
+    make_pdf(main.DOCUMENT_ROOT / "2024" / "Juan Garcia.pdf", ["old id"])
+    make_pdf(main.DOCUMENT_ROOT / "2025" / "Juan Garcia.pdf", ["existing final"])
+    client = TestClient(main.app)
+
+    open_response = client.post("/api/shared/prior-pdf", data={"relative_path": "2024/Juan Garcia.pdf"})
+    document_id = open_response.json()["document_id"]
+
+    response = client.post(
+        "/api/create-backup",
+        data={
+            "document_id": document_id,
+            "selected_pages": "1",
+            "tax_year": "2025",
+            "client_filename": "Juan Garcia.pdf",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["warning"] == "Juan Garcia.pdf already exists in 2025. Saved as Juan Garcia - version 2.pdf."
+    assert Path(payload["output_path"]) == main.DOCUMENT_ROOT / "2025" / "Juan Garcia - version 2.pdf"
+    assert (main.DOCUMENT_ROOT / "2025" / "Juan Garcia.pdf").exists()
+    assert (main.DOCUMENT_ROOT / "2025" / "Juan Garcia - version 2.pdf").exists()
+
+
+def test_clear_current_scans_deletes_files_after_success_confirmation(monkeypatch, tmp_path):
+    configure_tmp_data(monkeypatch, tmp_path, with_document_root=True)
+    assert main.DOCUMENT_ROOT is not None
+    scans = main.DOCUMENT_ROOT / "ClienteActual"
+    make_pdf(scans / "Juan W2.pdf", ["w2"])
+    (scans / "notes.txt").write_text("temporary scan note", encoding="utf-8")
+    make_pdf(scans / "nested" / "Juan 1099.pdf", ["1099"])
+    client = TestClient(main.app)
+
+    response = client.post("/api/shared/current-pdfs/clear", data={"tax_year": "2025"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["deleted_count"] == 3
+    assert list(scans.rglob("*.*")) == []
+    assert scans.exists()
+
+
 def test_create_backup_returns_download_url_and_download_endpoint_serves_pdf(monkeypatch, tmp_path):
     configure_tmp_data(monkeypatch, tmp_path)
     prior = make_pdf(tmp_path / "prior.pdf", ["old id"])
@@ -429,3 +476,18 @@ def test_frontend_script_syncs_income_tax_season_to_backup_and_output_years():
     assert "taxYear.value = season" in script
     assert "clearActiveDocument" in script
     assert "selectedCurrentPdfs" in script
+
+
+def test_frontend_script_clears_scanner_folder_after_continue_confirmation():
+    script = (main.PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "clearCurrentScannerFolder" in script
+    assert "/api/shared/current-pdfs/clear" in script
+    assert "Scanned intake folder cleared" in script
+
+
+def test_frontend_script_displays_existing_output_warning():
+    script = (main.PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "payload.warning" in script
+    assert "warningText" in script
