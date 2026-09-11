@@ -436,8 +436,8 @@ def test_root_ui_includes_page_preview_modal_and_delete_workflow_copy():
 
     assert response.status_code == 200
     assert "previewModal" in response.text
-    assert "Preview pages before deciding what to delete" in response.text
-    assert "Marked Delete" in response.text
+    assert "Pages are kept by default" in response.text
+    assert "Marked delete" in response.text
 
 
 def test_root_ui_includes_income_tax_season_selector():
@@ -463,7 +463,7 @@ def test_root_ui_includes_current_scans_and_continue_controls():
 
     assert response.status_code == 200
     assert "ClienteActual" in response.text
-    assert "Search Scanned PDFs" in response.text
+    assert "Search scanned PDFs" in response.text
     assert "confirmAndContinue" in response.text
     assert "Everything went OK" in response.text
 
@@ -482,7 +482,7 @@ def test_frontend_script_builds_preview_and_delete_controls():
 
     assert "pagesToDelete" in script
     assert "Preview" in script
-    assert "Mark Delete" in script
+    assert "Mark delete" in script
     assert "openPreview" in script
 
 

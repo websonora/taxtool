@@ -27,6 +27,30 @@ const previewModal = document.getElementById('previewModal');
 const previewImage = document.getElementById('previewImage');
 const previewTitle = document.getElementById('previewTitle');
 const closePreview = document.getElementById('closePreview');
+const seasonChipLabel = document.getElementById('seasonChipLabel');
+const healthChip = document.getElementById('healthChip');
+const healthChipLabel = document.getElementById('healthChipLabel');
+const pageCounter = document.getElementById('pageCounter');
+const stepRail = document.getElementById('stepRail');
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function icon(symbolId) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `#${symbolId}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function labelSpan(text) {
+  const span = document.createElement('span');
+  span.className = 'button-label';
+  span.textContent = text;
+  return span;
+}
 
 function setStatus(element, text, isError = false) {
   element.textContent = text;
@@ -49,11 +73,26 @@ function syncSeasonFields({ clearResults = false, resetBackupFolder = false } = 
   }
   taxYear.value = season;
   seasonSummary.textContent = `${season} season: default source is ${defaultBackupYear}, current source is ${sharedYear.value}, and final PDF saves into ${season} folder.`;
+  seasonChipLabel.textContent = `${season} season`;
   if (clearResults) {
     sharedResults.innerHTML = '';
     currentResults.innerHTML = '';
     selectedCurrentPdfs.clear();
   }
+}
+
+function updatePageCounter() {
+  if (!currentPageCount) {
+    pageCounter.hidden = true;
+    pageCounter.textContent = '';
+    return;
+  }
+  const marked = pagesToDelete.size;
+  const kept = currentPageCount - marked;
+  pageCounter.hidden = false;
+  pageCounter.textContent = marked
+    ? `${kept} of ${currentPageCount} pages kept · ${marked} marked delete`
+    : `${currentPageCount} page${currentPageCount === 1 ? '' : 's'} · all kept`;
 }
 
 function clearActiveDocument() {
@@ -62,6 +101,7 @@ function clearActiveDocument() {
   currentPageCount = 0;
   pagesToDelete.clear();
   thumbnailGrid.innerHTML = '';
+  updatePageCounter();
 }
 
 function clearCurrentSelections() {
@@ -116,8 +156,9 @@ function hidePreview() {
 function updateDeleteButton(card, deleteButton, page) {
   const marked = pagesToDelete.has(page);
   card.classList.toggle('marked-delete', marked);
-  deleteButton.textContent = marked ? 'Marked Delete' : 'Mark Delete';
+  deleteButton.querySelector('.button-label').textContent = marked ? 'Marked delete' : 'Mark delete';
   deleteButton.setAttribute('aria-pressed', String(marked));
+  updatePageCounter();
 }
 
 function renderThumbnails(pageCount) {
@@ -132,6 +173,7 @@ function renderThumbnails(pageCount) {
 
     const img = document.createElement('img');
     img.alt = `Page ${page}`;
+    img.loading = 'lazy';
     img.src = pageImageUrl(page);
 
     const label = document.createElement('span');
@@ -143,14 +185,21 @@ function renderThumbnails(pageCount) {
 
     const previewButton = document.createElement('button');
     previewButton.type = 'button';
-    previewButton.className = 'secondary-button';
-    previewButton.textContent = 'Preview';
+    previewButton.className = 'thumb-preview';
+    previewButton.setAttribute('aria-label', `Preview page ${page}`);
+    const overlay = document.createElement('span');
+    overlay.className = 'thumb-overlay';
+    overlay.appendChild(icon('i-eye'));
+    overlay.appendChild(labelSpan('Preview'));
+    previewButton.appendChild(img);
+    previewButton.appendChild(overlay);
     previewButton.addEventListener('click', () => openPreview(page));
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'delete-button';
-    deleteButton.textContent = 'Mark Delete';
+    deleteButton.appendChild(icon('i-trash'));
+    deleteButton.appendChild(labelSpan('Mark delete'));
     deleteButton.addEventListener('click', () => {
       if (pagesToDelete.has(page)) {
         pagesToDelete.delete(page);
@@ -160,13 +209,14 @@ function renderThumbnails(pageCount) {
       updateDeleteButton(card, deleteButton, page);
     });
 
-    actions.appendChild(previewButton);
     actions.appendChild(deleteButton);
-    card.appendChild(img);
+    card.appendChild(previewButton);
     card.appendChild(label);
     card.appendChild(actions);
     thumbnailGrid.appendChild(card);
   }
+
+  updatePageCounter();
 }
 
 function activateDocument(payload, sourceLabel) {
@@ -391,3 +441,63 @@ document.addEventListener('keydown', (event) => {
     hidePreview();
   }
 });
+
+function setHealthChip(state, text, title) {
+  healthChip.classList.remove('is-ok', 'is-warn', 'is-down');
+  healthChip.classList.add(state);
+  healthChipLabel.textContent = text;
+  healthChip.title = title;
+}
+
+async function refreshHealth() {
+  try {
+    const response = await fetch('/api/health');
+    if (!response.ok) {
+      throw new Error('health check failed');
+    }
+    const payload = await response.json();
+    if (!payload.document_root_configured) {
+      setHealthChip('is-warn', 'Upload mode', `No shared folder configured. Final PDFs save under ${payload.output_base}.`);
+      return;
+    }
+    if (payload.document_root_exists) {
+      setHealthChip('is-ok', 'Shared folder ready', `Shared folder reachable: ${payload.document_root}`);
+    } else {
+      setHealthChip('is-down', 'Shared folder missing', `Configured but not reachable: ${payload.document_root}`);
+    }
+  } catch {
+    setHealthChip('is-down', 'Server unreachable', 'Could not read /api/health from this app server.');
+  }
+}
+
+function trackActiveStep() {
+  const steps = Array.from(stepRail.querySelectorAll('.step'));
+  const sections = steps
+    .map((step) => document.querySelector(step.getAttribute('href')))
+    .filter(Boolean);
+  if (!sections.length || !('IntersectionObserver' in window)) {
+    return;
+  }
+
+  const visible = new Set();
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        visible.add(entry.target.id);
+      } else {
+        visible.delete(entry.target.id);
+      }
+    }
+    const activeId = sections.map((section) => section.id).find((id) => visible.has(id));
+    for (const step of steps) {
+      step.classList.toggle('is-active', activeId === step.getAttribute('href').slice(1));
+    }
+  }, { rootMargin: '-140px 0px -55% 0px', threshold: 0 });
+
+  for (const section of sections) {
+    observer.observe(section);
+  }
+}
+
+refreshHealth();
+trackActiveStep();
